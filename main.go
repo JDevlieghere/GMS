@@ -72,7 +72,7 @@ func pageHandler(w http.ResponseWriter, r *http.Request, param []string) {
 		http.NotFound(w, r)
 		return
 	}
-	err = tmpl["view.html"].ExecuteTemplate(w, "base.html", p)
+	err = tmpl["page.html"].ExecuteTemplate(w, "base.html", p)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -115,7 +115,7 @@ func makeTemplate(name string, base string) {
 
 func main() {
 	makeTemplate("index.html", "base.html")
-	makeTemplate("view.html", "base.html")
+	makeTemplate("page.html", "base.html")
 
 	flag.Parse()
 	http.HandleFunc("/page/", makeHandler(pageHandler))
