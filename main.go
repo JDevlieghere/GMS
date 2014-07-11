@@ -29,14 +29,12 @@ type (
 )
 
 var (
-	validPath = regexp.MustCompile("^/(page)/([a-zA-Z0-9]+)?$")
+	validPath = regexp.MustCompile("^(/page|/)(/[a-zA-Z0-9]+)?$")
 	validFile = regexp.MustCompile("^([a-zA-Z0-9]+).(md|MD)$")
 	addr      = flag.Bool("addr", false, "find open address and print to final-port.txt")
-	templates = template.Must(template.ParseFiles(
-		path.Join(TEMPLATES_DIR, "view.html"),
-		path.Join(TEMPLATES_DIR, "index.html")))
-	cache = make(map[string]*Page)
-	pages = make([]string, 0)
+	tmpl      = make(map[string]*template.Template)
+	cache     = make(map[string]*Page)
+	pages     = make([]string, 0)
 )
 
 func loadPage(slug string) (*Page, error) {
@@ -74,7 +72,7 @@ func pageHandler(w http.ResponseWriter, r *http.Request, param []string) {
 		http.NotFound(w, r)
 		return
 	}
-	err = templates.ExecuteTemplate(w, "view.html", p)
+	err = tmpl["view.html"].ExecuteTemplate(w, "base.html", p)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -92,7 +90,7 @@ func indexPage(path string, f os.FileInfo, err error) error {
 func indexHandler(w http.ResponseWriter, r *http.Request, param []string) {
 	pages = make([]string, 0)
 	filepath.Walk(PAGES_DIR, indexPage)
-	err := templates.ExecuteTemplate(w, "index.html", pages)
+	err := tmpl["index.html"].ExecuteTemplate(w, "base.html", pages)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -102,14 +100,23 @@ func makeHandler(fn func(http.ResponseWriter, *http.Request, []string)) http.Han
 	return func(w http.ResponseWriter, r *http.Request) {
 		m := validPath.FindStringSubmatch(r.URL.Path)
 		if m == nil {
-			http.NotFound(w, r)
+			http.Redirect(w, r, "/", http.StatusFound)
 			return
 		}
 		fn(w, r, m)
 	}
 }
 
+func makeTemplate(name string, base string) {
+	tmpl_name := path.Join(TEMPLATES_DIR, name)
+	tmpl_base := path.Join(TEMPLATES_DIR, base)
+	tmpl[name] = template.Must(template.ParseFiles(tmpl_name, tmpl_base))
+}
+
 func main() {
+	makeTemplate("index.html", "base.html")
+	makeTemplate("view.html", "base.html")
+
 	flag.Parse()
 	http.HandleFunc("/page/", makeHandler(pageHandler))
 	http.HandleFunc("/", makeHandler(indexHandler))
