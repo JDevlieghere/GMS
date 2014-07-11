@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"path"
 	"regexp"
 	"time"
@@ -33,15 +34,32 @@ var (
 )
 
 func loadPage(slug string) (*Page, error) {
+	filename := slug + ".md"
+	filepath := path.Join(PAGES_DIR, filename)
+	content, err := ioutil.ReadFile(filepath)
+	if err != nil {
+		return nil, err
+	}
+	finfo, err := os.Stat(filepath)
+	if err != nil {
+		return nil, err
+	}
+	body := template.HTML(blackfriday.MarkdownCommon(content))
+	page := &Page{Body: body, Timestamp: finfo.ModTime()}
+	pages[slug] = page
+	return page, nil
+}
+
+func fetchPage(slug string) (*Page, error) {
 	page, ok := pages[slug]
 	if !ok {
-		return nil, nil
+		return loadPage(slug)
 	}
 	return page, nil
 }
 
 func pageHandler(w http.ResponseWriter, r *http.Request, slug string) {
-	p, err := loadPage(slug)
+	p, err := fetchPage(slug)
 	if err != nil {
 		http.NotFound(w, r)
 		return
