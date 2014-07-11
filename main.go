@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"time"
 )
@@ -21,21 +22,21 @@ const (
 
 type (
 	Page struct {
+		Title     string
 		Body      template.HTML
 		Timestamp string
-	}
-	Stat struct {
-		Cached int
 	}
 )
 
 var (
-	validPath = regexp.MustCompile("^/(page|stat)/([a-zA-Z0-9]+)?$")
+	validPath = regexp.MustCompile("^/(page)/([a-zA-Z0-9]+)?$")
+	validFile = regexp.MustCompile("^([a-zA-Z0-9]+).(md|MD)$")
 	addr      = flag.Bool("addr", false, "find open address and print to final-port.txt")
 	templates = template.Must(template.ParseFiles(
 		path.Join(TEMPLATES_DIR, "view.html"),
-		path.Join(TEMPLATES_DIR, "stat.html")))
-	pages = make(map[string]*Page)
+		path.Join(TEMPLATES_DIR, "index.html")))
+	cache = make(map[string]*Page)
+	pages = make([]string, 0)
 )
 
 func loadPage(slug string) (*Page, error) {
@@ -54,13 +55,13 @@ func loadPage(slug string) (*Page, error) {
 	// Create Page from File
 	body := template.HTML(blackfriday.MarkdownCommon(content))
 	timestamp := finfo.ModTime().Format(time.ANSIC)
-	page := &Page{Body: body, Timestamp: timestamp}
-	pages[slug] = page
+	page := &Page{Title: slug, Body: body, Timestamp: timestamp}
+	cache[slug] = page
 	return page, nil
 }
 
 func fetchPage(slug string) (*Page, error) {
-	page, ok := pages[slug]
+	page, ok := cache[slug]
 	if !ok {
 		return loadPage(slug)
 	}
@@ -73,11 +74,25 @@ func pageHandler(w http.ResponseWriter, r *http.Request, param []string) {
 		http.NotFound(w, r)
 		return
 	}
-	renderPage(w, "view", p)
+	err = templates.ExecuteTemplate(w, "view.html", p)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
-func statHandler(w http.ResponseWriter, r *http.Request, param []string) {
-	err := templates.ExecuteTemplate(w, "stat.html", &Stat{Cached: len(pages)})
+func indexPage(path string, f os.FileInfo, err error) error {
+	name := f.Name()
+	ext := validFile.FindStringSubmatch(name)
+	if ext != nil {
+		pages = append(pages, ext[1])
+	}
+	return nil
+}
+
+func indexHandler(w http.ResponseWriter, r *http.Request, param []string) {
+	pages = make([]string, 0)
+	filepath.Walk(PAGES_DIR, indexPage)
+	err := templates.ExecuteTemplate(w, "index.html", pages)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -94,17 +109,10 @@ func makeHandler(fn func(http.ResponseWriter, *http.Request, []string)) http.Han
 	}
 }
 
-func renderPage(w http.ResponseWriter, tmpl string, p *Page) {
-	err := templates.ExecuteTemplate(w, tmpl+".html", p)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
 func main() {
 	flag.Parse()
 	http.HandleFunc("/page/", makeHandler(pageHandler))
-	http.HandleFunc("/stat/", makeHandler(statHandler))
+	http.HandleFunc("/", makeHandler(indexHandler))
 
 	if *addr {
 		l, err := net.Listen("tcp", "127.0.0.1:0")
