@@ -23,22 +23,19 @@ type MemoryCache struct {
 	Pages map[string]*Page
 }
 
-type FileCache struct {
-	Path  string
-	Pages []string
-}
-
 func (cache MemoryCache) GetPage(slug string) *Page {
 	// Try Cache
 	page, ok := cache.Pages[slug]
 	if ok {
 		return page
 	}
+
 	// Load Page
 	page, err := loadPage(PAGES_DIR, slug)
 	if err == nil {
 		return nil
 	}
+
 	// Cache Page
 	cache.Pages[slug] = page
 

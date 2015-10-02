@@ -9,3 +9,9 @@ type Page struct {
 	Body      template.HTML
 	Timestamp string
 }
+
+type FilePage struct {
+	Title     string
+	Filename  string
+	Timestamp string
+}

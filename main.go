@@ -1,139 +1,75 @@
 package main
 
 import (
-	"flag"
-	"github.com/russross/blackfriday"
+	"GMS/core"
 	"html/template"
-	"io/ioutil"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
-	"time"
 )
 
-const (
-	PAGES_DIR     = "pages"
-	TEMPLATES_DIR = "tmpl"
-)
+const TEMPLATES_DIR = "tmpl"
+const PAGES_DIR = "pages"
 
-type (
-	Page struct {
-		Title     string
-		Body      template.HTML
-		Timestamp string
+func makeIndexer(pages *[]string) func(path string, f os.FileInfo, err error) error {
+	return func(path string, f os.FileInfo, err error) error {
+		name := f.Name()
+		validFile := regexp.MustCompile("^([a-zA-Z0-9]+).(md|MD)$")
+		ext := validFile.FindStringSubmatch(name)
+		if ext != nil {
+			log.Printf("Found page: %v\n", ext[1])
+			*pages = append(*pages, ext[1])
+		}
+		return nil
 	}
-)
-
-var (
-	validPath = regexp.MustCompile("^(/page|/)(/[a-zA-Z0-9]+)?$")
-	validFile = regexp.MustCompile("^([a-zA-Z0-9]+).(md|MD)$")
-	addr      = flag.Bool("addr", false, "find open address and print to final-port.txt")
-	tmpl      = make(map[string]*template.Template)
-	cache     = make(map[string]*Page)
-	pages     = make([]string, 0)
-)
-
-func loadPage(slug string) (*Page, error) {
-	filename := slug + ".md"
-	filepath := path.Join(PAGES_DIR, filename)
-	// File Content
-	content, err := ioutil.ReadFile(filepath)
-	if err != nil {
-		return nil, err
-	}
-	// File Modification Date
-	finfo, err := os.Stat(filepath)
-	if err != nil {
-		return nil, err
-	}
-	// Create Page from File
-	body := template.HTML(blackfriday.MarkdownCommon(content))
-	timestamp := finfo.ModTime().Format(time.ANSIC)
-	page := &Page{Title: slug, Body: body, Timestamp: timestamp}
-	cache[slug] = page
-	return page, nil
 }
 
-func fetchPage(slug string) (*Page, error) {
-	page, ok := cache[slug]
-	if !ok {
-		return loadPage(slug)
-	}
-	return page, nil
-}
-
-func pageHandler(w http.ResponseWriter, r *http.Request, param []string) {
-	p, err := fetchPage(param[2])
-	if err != nil {
-		http.NotFound(w, r)
+func pageHandler(w http.ResponseWriter, r *http.Request, t *template.Template) {
+	validPath := regexp.MustCompile("^(/page|/)(/[a-zA-Z0-9]+)?$")
+	m := validPath.FindStringSubmatch(r.URL.Path)
+	log.Printf("Page handler called with parameters: %v\n", m)
+	if m == nil {
+		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
-	err = tmpl["page.html"].ExecuteTemplate(w, "base.html", p)
+	p := core.Page{}
+	err := t.ExecuteTemplate(w, "base.html", p)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
-func indexPage(path string, f os.FileInfo, err error) error {
-	name := f.Name()
-	ext := validFile.FindStringSubmatch(name)
-	if ext != nil {
-		pages = append(pages, ext[1])
-	}
-	return nil
-}
-
-func indexHandler(w http.ResponseWriter, r *http.Request, param []string) {
-	pages = make([]string, 0)
-	filepath.Walk(PAGES_DIR, indexPage)
-	err := tmpl["index.html"].ExecuteTemplate(w, "base.html", pages)
+func indexHandler(w http.ResponseWriter, r *http.Request, t *template.Template) {
+	log.Printf("Index handler called\n")
+	pages := make([]string, 0)
+	filepath.Walk(PAGES_DIR, makeIndexer(&pages))
+	err := t.ExecuteTemplate(w, "base.html", pages)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
-func makeHandler(fn func(http.ResponseWriter, *http.Request, []string)) http.HandlerFunc {
+func makeHandler(fn func(http.ResponseWriter, *http.Request, *template.Template), t *template.Template) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		m := validPath.FindStringSubmatch(r.URL.Path)
-		if m == nil {
-			http.Redirect(w, r, "/", http.StatusFound)
-			return
-		}
-		fn(w, r, m)
+		fn(w, r, t)
 	}
 }
 
-func makeTemplate(name string, base string) {
+func makeTemplate(name string, base string) *template.Template {
 	tmpl_name := path.Join(TEMPLATES_DIR, name)
 	tmpl_base := path.Join(TEMPLATES_DIR, base)
-	tmpl[name] = template.Must(template.ParseFiles(tmpl_name, tmpl_base))
+	return template.Must(template.ParseFiles(tmpl_name, tmpl_base))
 }
 
 func main() {
-	makeTemplate("index.html", "base.html")
-	makeTemplate("page.html", "base.html")
+	indexTemplate := makeTemplate("index.html", "base.html")
+	pageTemplate := makeTemplate("page.html", "base.html")
 
-	flag.Parse()
-	http.HandleFunc("/page/", makeHandler(pageHandler))
-	http.HandleFunc("/", makeHandler(indexHandler))
+	http.HandleFunc("/page/", makeHandler(pageHandler, pageTemplate))
+	http.HandleFunc("/", makeHandler(indexHandler, indexTemplate))
 
-	if *addr {
-		l, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			log.Fatal(err)
-		}
-		err = ioutil.WriteFile("final-port.txt", []byte(l.Addr().String()), 0644)
-		if err != nil {
-			log.Fatal(err)
-		}
-		s := &http.Server{}
-		s.Serve(l)
-		return
-	}
-
-	http.ListenAndServe(":80", nil)
+	http.ListenAndServe(":8888", nil)
 }
