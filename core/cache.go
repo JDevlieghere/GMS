@@ -16,27 +16,33 @@ const (
 
 type Cache interface {
 	GetPage(slug string) *Page
-	SetPage(slug string, page *Page)
 }
 
 type MemoryCache struct {
 	Pages map[string]*Page
 }
 
-func (cache MemoryCache) GetPage(slug string) *Page {
+func EmptyMemoryCache() *MemoryCache {
+	return &MemoryCache{Pages: make(map[string]*Page)}
+}
+
+func (cache *MemoryCache) GetPage(slug string) *Page {
 	// Try Cache
 	page, ok := cache.Pages[slug]
 	if ok {
+		log.Printf("Loading page from MemoryCache: %v\n", slug)
 		return page
 	}
 
 	// Load Page
 	page, err := loadPage(PAGES_DIR, slug)
-	if err == nil {
+	if err != nil {
+		log.Println(err)
 		return nil
 	}
 
 	// Cache Page
+	log.Printf("Storing page in MemoryCache: %v\n", slug)
 	cache.Pages[slug] = page
 
 	return page
