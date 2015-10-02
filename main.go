@@ -12,8 +12,13 @@ import (
 	"strings"
 )
 
-const TEMPLATES_DIR = "tmpl"
-const PAGES_DIR = "pages"
+const (
+	DIR_TEMPLATES = "tmpl"
+	DIR_PAGES     = "pages"
+	HTML_BASE     = "base.html"
+	HTML_INDEX    = "index.html"
+	HTML_PAGE     = "page.html"
+)
 
 func makeIndexer(pages *[]string) func(path string, f os.FileInfo, err error) error {
 	return func(path string, f os.FileInfo, err error) error {
@@ -43,7 +48,7 @@ func pageHandler(t *template.Template, c core.Cache) http.HandlerFunc {
 			http.NotFound(w, r)
 			return
 		}
-		err := t.ExecuteTemplate(w, "base.html", p)
+		err := t.ExecuteTemplate(w, HTML_BASE, p)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
@@ -54,25 +59,25 @@ func indexHandler(t *template.Template) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Index handler called\n")
 		pages := make([]string, 0)
-		filepath.Walk(PAGES_DIR, makeIndexer(&pages))
-		err := t.ExecuteTemplate(w, "base.html", pages)
+		filepath.Walk(DIR_PAGES, makeIndexer(&pages))
+		err := t.ExecuteTemplate(w, HTML_BASE, pages)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}
 }
 
-func makeTemplate(name string, base string) *template.Template {
-	tmpl_name := path.Join(TEMPLATES_DIR, name)
-	tmpl_base := path.Join(TEMPLATES_DIR, base)
+func makeTemplate(name string) *template.Template {
+	tmpl_name := path.Join(DIR_TEMPLATES, name)
+	tmpl_base := path.Join(DIR_TEMPLATES, HTML_BASE)
 	return template.Must(template.ParseFiles(tmpl_name, tmpl_base))
 }
 
 func main() {
 	cache := core.EmptyMemoryCache()
 
-	indexTemplate := makeTemplate("index.html", "base.html")
-	pageTemplate := makeTemplate("page.html", "base.html")
+	indexTemplate := makeTemplate(HTML_INDEX)
+	pageTemplate := makeTemplate(HTML_PAGE)
 
 	http.HandleFunc("/page/", pageHandler(pageTemplate, cache))
 	http.HandleFunc("/", indexHandler(indexTemplate))
